@@ -1,0 +1,9 @@
+# Orchestrator task ledger (local working state, not part of the skill)
+.agent-orchestrator/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

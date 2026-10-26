@@ -1,0 +1,4 @@
+# Keep markdown/scripts LF regardless of OS so skill files stay byte-stable
+* text=auto eol=lf
+*.png binary
+*.jpg binary
