@@ -171,6 +171,63 @@ Rules:
 - Write long prompts to a file and pass a short pointer when the prompt would be unwieldy to
   paste, and keep the full text in the ledger either way.
 
+### Default parallel layout strategy: sibling split within same tab (同标签多窗格并行与主面积保护)
+
+When dispatching parallel tasks to sub-agents, follow this verified multi-pane layout policy:
+
+1. **Keep it in the current tab (同标签内并行)**:
+   - Default to sibling splits inside the caller's active tab (`$HERDR_TAB_ID`). Do not create new workspaces or spawn unnecessary tabs for short/medium subtasks.
+   - All agents share one visual cockpit; the user and coordinator can observe progress at a glance without tab hopping.
+
+2. **Split target selection (保护主 agent 面积原则)**:
+   - Herdr calculates pane splits as a binary tree. **The split target decides which rectangle is compressed**.
+   - **First sub-agent**: Split the caller's main pane (`--current`), direction `right` (on standard/wide screens) or `down` (on tall/narrow displays). Both panes now occupy 50% ratio (`split_0_root.ratio = 0.5`).
+   - **Second and subsequent sub-agents**: **Do NOT split `--current` again!** Target the **existing child pane** (`--pane <CHILD_PANE_ID>`) with an orthogonal direction (e.g. `down` if the first split was `right`).
+   - *Result*: Splitting the child pane partitions only the right-hand column into top/bottom halves (e.g. `w6:pR` top-right, `w6:pS` bottom-right). The main coordinator pane (`w6:p9`) remains completely untouched at full height and 50% width.
+
+3. **Always use `--no-focus`**:
+   - Every split must pass `--no-focus`. Focus stays on the orchestrator; sub-agents start in background without stealing keystrokes or terminal focus.
+
+4. **Temporary inspection via zoom**:
+   - When detailed reading of a sub-agent's terminal output is needed, use `herdr pane zoom --pane <ID>` (or `--toggle`/`--on`).
+   - Zoom maximizes the pane as a temporary display overlay. It does **not** alter the underlying split tree or ratios.
+   - To restore the multi-pane layout: `herdr pane zoom --pane <ID> --off` (or `--toggle`).
+
+5. **Concurrency limits & when to switch to a new tab**:
+   - **Limit per tab**: Recommended maximum of **3 to 4 panes** in a single tab (e.g., 1 orchestrator + 2~3 sub-agents). Beyond 4 panes, font size or terminal columns drop below practical thresholds (e.g., width < 40 cols).
+   - **When to create a new tab (`herdr tab create`) instead**:
+     - Sub-agent count exceeds 3;
+     - The subtask is a long-running, independent background server or watcher that does not need continuous visual comparison;
+     - The subtask runs an interactive full-screen TUI that requires full terminal dimensions.
+
+### Reusable sub-agent prompt template (可直接复用的提示词模板)
+
+When drafting Chinese sub-agent prompts (for research, analysis, or code tasks), use this standardized high-efficiency prompt template:
+
+```markdown
+# 任务：[任务简述，如：调研 X 主题并输出结构化分析报告]
+
+## 背景与目标
+1. [简述任务上下文，为什么要执行此任务]
+2. [明确最终需要产出的核心结论与成果]
+
+## 执行红线与约束（严格遵守）
+- **只读检索原则**：在通过网络、API 或浏览器工具检索时，严格限制为只读检索（仅允许搜索、阅读与提取信息）。严禁点赞、收藏、评论、转发、发帖、私信或提交任何表单。
+- **不得编造事实**：客观区分「有公开证据」「仅有零星传闻」「完全无信息」，查不到的信息如实说明。
+- **长文自动归档**：凡长篇调研、源码剖析或预计输出超过 400 字 / 30 行的内容，严禁在 CLI 终端中完整打印长文，必须自动写入 `D:\AData\dev\study\study-obs\YYYYMMDD_[核心主题].md`。
+- **隐私保护**：涉及个人隐私、未公开聊天记录或敏感凭证一律不采集、不写入。
+
+## 交付物与文档要求
+- 生成文件绝对路径：`D:\AData\dev\study\study-obs\YYYYMMDD_[核心主题].md`（UTF-8 编码）。
+- 包含清晰的层级标题（H1/H2/H3）、执行摘要、事实核查与证据表、侧面画像/分析论述、风险提示、下一步建议及来源索引。
+
+## 终端收尾规范
+完成后，在终端只输出：
+1. **执行摘要**：核心结论与关键要点速览（控制在 150~200 字以内）；
+2. **生成文件的完整绝对路径**（方便在 Obsidian 中直接点击查看）。
+严禁在终端中打印整篇长文。
+```
+
 ## Step 3 — Verify (no unverified claims)
 
 An agent counts as *launched* only when all of these hold: `agent start` (or `pane run`) returned
