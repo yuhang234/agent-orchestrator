@@ -131,10 +131,39 @@ command -v agy claude codex codebuddy opencode gemini pi   # which CLIs actually
 2. Split into subtasks only when the split buys parallelism, isolation, or a different skill.
    Avoid splitting work that one agent can finish coherently in a single turn.
 3. For each subtask decide: agent, working directory, whether it needs a git worktree for
-   isolation, and whether subtasks can run in parallel.
+   isolation, and whether subtasks can run in parallel. When the user has **not** named an agent,
+   pick one with the auto-assignment rules below; when the user **has** named one, their choice wins.
 4. Show the plan (agent / subtask / prompt / cwd / acceptance criteria) and wait for approval
    when the task is substantial, ambiguous, or has side effects.
 5. Open the task ledger entry before the first prompt is sent (`references/task-ledger.md`).
+
+### 子智能体自动分配规则 (sub-agent auto-assignment)
+
+当用户没有明确指定子智能体时，主智能体应根据任务类型，按照以下规则自动选择执行智能体：
+
+1. **前端开发任务：** 必须优先使用 `agy` 智能体。
+2. **非前端开发任务：** 按照以下优先级依次选择：
+   - 第一优先级：`OpenCode`
+   - 第二优先级：`codebuddy`（独立 CLI：CodeBuddy Code，命令 `codebuddy`；Herdr 无对应 kind，
+     走 `pane run` + `pane send-text` 路径，见 `references/agent-launch-matrix.md`）
+   - 第三优先级：`agy`（保底方案）
+
+### 执行原则 (assignment principles)
+
+- **用户指定优先：** 如果用户明确指定了子智能体，优先遵循用户的指定，不执行自动分配规则。
+- **按任务类型分配：** 先判断任务是否属于前端开发（页面/组件/样式/交互/前端构建与联调、
+  HTML/CSS/JS/TS/React/Vue/Electron 等），再按照对应的优先级选择智能体。
+  非前端但要"看得见界面"的任务（如截图验收、浏览器操作）仍按非前端规则，由执行者自行验证。
+- **失败后降级：** 如果首选智能体不可用、无法执行任务或执行失败，则按照对应的优先级尝试下一个
+  可用智能体。降级前先记录失败证据（错误原文、退出状态），不得凭猜测判定“不可用”。
+- **避免无效重试：** 同一个智能体已经明确无法完成任务时，不应反复分配相同任务；必要时调整任务描述
+  （缩小范围、换交付物、换模型）后再重试。同类失败连续两次即停止并上报。
+- **主智能体负责协调：** 主智能体负责任务拆分、智能体分配、执行进度跟踪、结果验收和最终汇总。
+- **透明报告：** 如果发生智能体切换，应简要说明切换原因；如果所有候选智能体均不可用，应明确告知
+  用户，不得虚构执行结果。
+
+> 额度类失败（如 OpenCode `Free usage exceeded`、`Model is unavailable`）属于智能体级不可用：
+> 不要在同一 CLI 内反复换免费模型自我消耗，记录证据后直接降到下一优先级，并说明原因。
 
 ## Step 2 — Launch and hand off
 
@@ -170,6 +199,63 @@ Rules:
   unsupported, report it and propose a compatible alternative instead of quietly changing it.
 - Write long prompts to a file and pass a short pointer when the prompt would be unwieldy to
   paste, and keep the full text in the ledger either way.
+
+### Default parallel layout strategy: sibling split within same tab (同标签多窗格并行与主面积保护)
+
+When dispatching parallel tasks to sub-agents, follow this verified multi-pane layout policy:
+
+1. **Keep it in the current tab (同标签内并行)**:
+   - Default to sibling splits inside the caller's active tab (`$HERDR_TAB_ID`). Do not create new workspaces or spawn unnecessary tabs for short/medium subtasks.
+   - All agents share one visual cockpit; the user and coordinator can observe progress at a glance without tab hopping.
+
+2. **Split target selection (保护主 agent 面积原则)**:
+   - Herdr calculates pane splits as a binary tree. **The split target decides which rectangle is compressed**.
+   - **First sub-agent**: Split the caller's main pane (`--current`), direction `right` (on standard/wide screens) or `down` (on tall/narrow displays). Both panes now occupy 50% ratio (`split_0_root.ratio = 0.5`).
+   - **Second and subsequent sub-agents**: **Do NOT split `--current` again!** Target the **existing child pane** (`--pane <CHILD_PANE_ID>`) with an orthogonal direction (e.g. `down` if the first split was `right`).
+   - *Result*: Splitting the child pane partitions only the right-hand column into top/bottom halves (e.g. `w6:pR` top-right, `w6:pS` bottom-right). The main coordinator pane (`w6:p9`) remains completely untouched at full height and 50% width.
+
+3. **Always use `--no-focus`**:
+   - Every split must pass `--no-focus`. Focus stays on the orchestrator; sub-agents start in background without stealing keystrokes or terminal focus.
+
+4. **Temporary inspection via zoom**:
+   - When detailed reading of a sub-agent's terminal output is needed, use `herdr pane zoom --pane <ID>` (or `--toggle`/`--on`).
+   - Zoom maximizes the pane as a temporary display overlay. It does **not** alter the underlying split tree or ratios.
+   - To restore the multi-pane layout: `herdr pane zoom --pane <ID> --off` (or `--toggle`).
+
+5. **Concurrency limits & when to switch to a new tab**:
+   - **Limit per tab**: Recommended maximum of **3 to 4 panes** in a single tab (e.g., 1 orchestrator + 2~3 sub-agents). Beyond 4 panes, font size or terminal columns drop below practical thresholds (e.g., width < 40 cols).
+   - **When to create a new tab (`herdr tab create`) instead**:
+     - Sub-agent count exceeds 3;
+     - The subtask is a long-running, independent background server or watcher that does not need continuous visual comparison;
+     - The subtask runs an interactive full-screen TUI that requires full terminal dimensions.
+
+### Reusable sub-agent prompt template (可直接复用的提示词模板)
+
+When drafting Chinese sub-agent prompts (for research, analysis, or code tasks), use this standardized high-efficiency prompt template:
+
+```markdown
+# 任务：[任务简述，如：调研 X 主题并输出结构化分析报告]
+
+## 背景与目标
+1. [简述任务上下文，为什么要执行此任务]
+2. [明确最终需要产出的核心结论与成果]
+
+## 执行红线与约束（严格遵守）
+- **只读检索原则**：在通过网络、API 或浏览器工具检索时，严格限制为只读检索（仅允许搜索、阅读与提取信息）。严禁点赞、收藏、评论、转发、发帖、私信或提交任何表单。
+- **不得编造事实**：客观区分「有公开证据」「仅有零星传闻」「完全无信息」，查不到的信息如实说明。
+- **长文自动归档**：凡长篇调研、源码剖析或预计输出超过 400 字 / 30 行的内容，严禁在 CLI 终端中完整打印长文，必须自动写入 `D:\AData\dev\study\study-obs\YYYYMMDD_[核心主题].md`。
+- **隐私保护**：涉及个人隐私、未公开聊天记录或敏感凭证一律不采集、不写入。
+
+## 交付物与文档要求
+- 生成文件绝对路径：`D:\AData\dev\study\study-obs\YYYYMMDD_[核心主题].md`（UTF-8 编码）。
+- 包含清晰的层级标题（H1/H2/H3）、执行摘要、事实核查与证据表、侧面画像/分析论述、风险提示、下一步建议及来源索引。
+
+## 终端收尾规范
+完成后，在终端只输出：
+1. **执行摘要**：核心结论与关键要点速览（控制在 150~200 字以内）；
+2. **生成文件的完整绝对路径**（方便在 Obsidian 中直接点击查看）。
+严禁在终端中打印整篇长文。
+```
 
 ## Step 3 — Verify (no unverified claims)
 

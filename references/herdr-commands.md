@@ -49,6 +49,16 @@ Extraction with `jq` (available on the authoring machine):
 pane=$(herdr pane split --current --direction right --cwd "$PWD" --no-focus | jq -r '.result.pane.pane_id')
 ```
 
+### Layout tree structure & hierarchy (verified in 0.9.3)
+
+`herdr pane layout --pane "$HERDR_PANE_ID"` returns the exact binary layout tree:
+- Hierarchy: `Workspace` (e.g. `w6`) contains `Tabs` (e.g. `w6:t9`); each tab contains a binary `Splits Tree` of `Panes` (e.g. `w6:p9`, `w6:pR`, `w6:pS`).
+- `.result.layout.area`: `{ "height": H, "width": W, "x": 0, "y": 0 }` — total tab dimensions.
+- `.result.layout.panes[]`: array of panes, each having `pane_id`, `rect: {x, y, width, height}`, and `focused: bool`.
+- `.result.layout.splits[]`: array of binary split nodes, each having `id` (e.g. `split_0_root`), `direction` (`right`|`down`), `ratio` (e.g. `0.5`), and bounded `rect`.
+- `.result.layout.zoomed`: `true|false` indicating whether any pane is temporarily maximized.
+- **Bounding box isolation rule**: A split partitions *only* the bounding box of the target pane. Splitting an existing child pane leaves all sibling branches (specifically the main agent's rect) completely unchanged.
+
 ## Pane commands
 
 ```
@@ -60,11 +70,31 @@ herdr pane  list current get layout process-info neighbor edges focus resize zoo
 Split:
 
 ```bash
+# 1. First sub-agent: split the caller's main pane (wide screen: right, tall: down)
 herdr pane split --current --direction right --cwd "$PWD" --no-focus
+# Returns .result.pane.pane_id (e.g. w6:pR)
+
+# 2. Second sub-agent: split the EXISTING child pane (orthogonal direction, e.g. down)
+herdr pane split --pane <CHILD_PANE_ID> --direction down --cwd "$PWD" --no-focus
+# Crucial: splitting the child pane bisects ONLY the child's bounding box,
+# leaving the main caller pane's area (ratio 0.5, left half) completely intact!
 ```
 
 Options: `--pane <ID>`, `--current`, `--direction right|down`, `--ratio <FLOAT>`, `--cwd <PATH>`,
 `--env KEY=VALUE`, `--focus`, `--no-focus`, `--right-click herdr|pane`.
+
+Zoom (temporary overlay inspection without changing layout tree):
+
+```bash
+# Toggle zoom on a pane (maximize to full canvas without altering the layout tree)
+herdr pane zoom --pane <pane-id> --toggle
+# Or explicitly turn on/off:
+herdr pane zoom --pane <pane-id> --on
+herdr pane zoom --pane <pane-id> --off
+```
+
+Options: `--pane <ID>`, `--current`, `--toggle`, `--on`, `--off`.
+*Note: Zoom is a pure display overlay. Exiting zoom with `--off` or `--toggle` restores the exact prior multi-pane rects.*
 
 Run a command and read output:
 
