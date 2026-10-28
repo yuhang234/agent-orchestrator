@@ -131,10 +131,39 @@ command -v agy claude codex codebuddy opencode gemini pi   # which CLIs actually
 2. Split into subtasks only when the split buys parallelism, isolation, or a different skill.
    Avoid splitting work that one agent can finish coherently in a single turn.
 3. For each subtask decide: agent, working directory, whether it needs a git worktree for
-   isolation, and whether subtasks can run in parallel.
+   isolation, and whether subtasks can run in parallel. When the user has **not** named an agent,
+   pick one with the auto-assignment rules below; when the user **has** named one, their choice wins.
 4. Show the plan (agent / subtask / prompt / cwd / acceptance criteria) and wait for approval
    when the task is substantial, ambiguous, or has side effects.
 5. Open the task ledger entry before the first prompt is sent (`references/task-ledger.md`).
+
+### 子智能体自动分配规则 (sub-agent auto-assignment)
+
+当用户没有明确指定子智能体时，主智能体应根据任务类型，按照以下规则自动选择执行智能体：
+
+1. **前端开发任务：** 必须优先使用 `agy` 智能体。
+2. **非前端开发任务：** 按照以下优先级依次选择：
+   - 第一优先级：`OpenCode`
+   - 第二优先级：`codebuddy`（独立 CLI：CodeBuddy Code，命令 `codebuddy`；Herdr 无对应 kind，
+     走 `pane run` + `pane send-text` 路径，见 `references/agent-launch-matrix.md`）
+   - 第三优先级：`agy`（保底方案）
+
+### 执行原则 (assignment principles)
+
+- **用户指定优先：** 如果用户明确指定了子智能体，优先遵循用户的指定，不执行自动分配规则。
+- **按任务类型分配：** 先判断任务是否属于前端开发（页面/组件/样式/交互/前端构建与联调、
+  HTML/CSS/JS/TS/React/Vue/Electron 等），再按照对应的优先级选择智能体。
+  非前端但要"看得见界面"的任务（如截图验收、浏览器操作）仍按非前端规则，由执行者自行验证。
+- **失败后降级：** 如果首选智能体不可用、无法执行任务或执行失败，则按照对应的优先级尝试下一个
+  可用智能体。降级前先记录失败证据（错误原文、退出状态），不得凭猜测判定“不可用”。
+- **避免无效重试：** 同一个智能体已经明确无法完成任务时，不应反复分配相同任务；必要时调整任务描述
+  （缩小范围、换交付物、换模型）后再重试。同类失败连续两次即停止并上报。
+- **主智能体负责协调：** 主智能体负责任务拆分、智能体分配、执行进度跟踪、结果验收和最终汇总。
+- **透明报告：** 如果发生智能体切换，应简要说明切换原因；如果所有候选智能体均不可用，应明确告知
+  用户，不得虚构执行结果。
+
+> 额度类失败（如 OpenCode `Free usage exceeded`、`Model is unavailable`）属于智能体级不可用：
+> 不要在同一 CLI 内反复换免费模型自我消耗，记录证据后直接降到下一优先级，并说明原因。
 
 ## Step 2 — Launch and hand off
 

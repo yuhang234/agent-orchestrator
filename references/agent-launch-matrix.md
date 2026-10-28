@@ -4,6 +4,20 @@ Two separate decisions: **which agent** should do the work, and **how** to launc
 
 ## Choosing the agent
 
+### Mandatory priority (user-configured, applies when the user does not name an agent)
+
+| Task type | Order of preference |
+|---|---|
+| 前端开发 (frontend: pages, components, styles, interactions, front-end build/dev server, HTML/CSS/JS/TS/React/Vue/Electron…) | **1. AGY** (required) |
+| 非前端开发 (everything else) | **1. OpenCode → 2. CodeBuddy → 3. AGY** (fallback) |
+
+Fallback order is used only for *capability/availability* failures, with evidence recorded. Free-quota
+exhaustion (`Free usage exceeded`), `Model is unavailable`, and repeated startup hangs count as
+"agent unavailable" — record the error text, then move to the next agent instead of cycling models
+inside the same CLI. See `SKILL.md` → "子智能体自动分配规则" for the full execution principles.
+
+### Fit-based defaults (secondary guidance, never overrides the priority above)
+
 Prefer the agent the user names. When the user leaves it open, choose by strength of fit and say
 why in one line:
 
